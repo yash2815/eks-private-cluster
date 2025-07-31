@@ -1,0 +1,11 @@
+# Terraform files
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfplan
+.crash
+*.log
+
+# Ignore any private keys
+**/generated-keys/*
+*.pem
