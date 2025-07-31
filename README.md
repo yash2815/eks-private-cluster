@@ -1,149 +1,191 @@
-🚀 Secure Private EKS Cluster Provisioning with Terraform
-📌 Assignment Overview
-This project provisions a private Amazon EKS cluster using Terraform, ensures all nodes are in private subnets, and provides a Bastion host for secure access. A shell script is also included to list EKS nodes with their internal IPs.
+🚀 Overview
+This project demonstrates how to provision a secure and private Amazon EKS Cluster using Terraform with a Bastion Host, NAT Gateway, and Remote Backend for state management. You can SSH into the Bastion and use kubectl to interact with the EKS cluster.
 
-🛠️ Tech Stack
-AWS Services: VPC, EC2, EKS, IAM, NAT Gateway, Bastion Host
-
-Terraform Version: ≥ 1.4.0
-
-AWS Region: us-east-1
-
-OS for Bastion Host: Ubuntu 22.04
-
-Shell: Bash
-
-Tools installed: kubectl, awscli
-
-🔧 Folder Structure
+📂 Project Structure
 eks-private-cluster/
+│
+├── state-mgmt/                    # Remote backend configuration
+│   ├── main.tf
+│   ├── variables.tf
+│   └── terraform.tfvars
+│
 ├── main-infra/
-│   ├── env/
-│   │   └── dev/
-│   │       ├── main.tf
-│   │       ├── terraform.tfvars
-│   │       ├── outputs.tf
-│   │       └── provider.tf
+│   ├── env/dev/                   # Root module to provision VPC, EKS, Bastion
+│   │   ├── main.tf
+│   │   ├── terraform.tfvars
+│   │   ├── backend.tf
+│   │   └── variables.tf
+│   │
 │   └── modules/
 │       ├── vpc/
 │       ├── eks/
-│       ├── nodegroup/
-│       └── bastion/
-├── get-nodes.sh
-└── README.md
-✅ Features Implemented
-🔐 Private EKS Cluster
-No public subnets used
+│       ├── bastion/
+│       └── nodegroup/
+│
+└── get-nodes.sh                   # Script to list node names and private IPs
 
-EKS API endpoint is private-only
 
-2 private subnets in different AZs (us-east-1a, us-east-1b)
+✅ Requirements:
+AWS CLI
+Terraform ≥ 1.4.0
+Kubectl
+SSH access to Bastion (with PEM key)
+IAM user/role with proper EKS, EC2, VPC, and S3 permissions
 
-EKS cluster and node groups created with Terraform
 
-🔒 Secure Access via Bastion Host
-Bastion in public subnet with Elastic IP
+--------------------------------------------------------------------------------------------------------------------
 
-SSH access only via .pem key
+🌐 AWS Region Used
+Region: us-east-1
 
-Security Group Rule allows Bastion to access EKS API (port 443)
+--------------------------------------------------------------------------------------------------------------------
 
-📜 Node Inspection Shell Script
-get-nodes.sh uses kubectl to fetch:
+🔐 Remote Backend Setup
 
-Node names
+Before provisioning infrastructure, we set up a Remote Backend using:
 
-Internal IPs
+S3 Bucket: To store the Terraform state file centrally.
+DynamoDB Table: To implement state locking and avoid race conditions.
 
-⚙️ Infrastructure Provisioning Steps
-VPC Module
+📁 Location: state-mgmt/
 
-Created VPC with:
+🔍 Why use Remote Backend?
+Centralized state sharing across teams
+Version history for infrastructure
+Locking prevents concurrent changes
 
-2 private subnets
+Steps:
 
-2 public subnets
+Create an S3 bucket and DynamoDB table manually (or via Terraform).
+Configure the backend using backend.tf in main-infra/env/dev/.
+Initialize Terraform using:
 
-NAT Gateway in public subnet
+cd state-mgmt/
+terraform init
+terraform apply
 
-Route tables and associations
 
-EKS Module
+--------------------------------------------------------------------------------------------------------------------
 
-Private EKS cluster with:
 
-Private endpoint access only
 
-IAM roles and permissions
+⚙️ Infrastructure Provisioning
+📁 Location: main-infra/env/dev/
 
-Logging enabled
+We used self-written Terraform modules for each resource category.
 
-Cluster SG updated via aws_security_group_rule to allow access from Bastion
+1. VPC Module:
+   
+      2 private subnets across different AZs
 
-Node Group Module
+      2 public subnets (for Bastion + NAT Gateway)
 
-Deployed managed node group in private subnets
+Internet Gateway for public access
 
-Linked with the EKS cluster
+NAT Gateway for private subnet outbound access
 
-Bastion Module
+Route tables for private & public subnets
 
-Ubuntu EC2 in public subnet
+📌 Why NAT Gateway?
+EKS Node Groups must connect to Amazon EKS control plane and other AWS services (like container registry). Since our node groups are in private subnets, they need outbound internet access — which a NAT Gateway provides.
 
-Security group with SSH access from 0.0.0.0/0
 
-Public IP via Elastic IP
+-----------
 
-Outputs exposed:
+2. Bastion Module
+Deployed in a public subnet
 
-Bastion Public IP
+Key Pair generated automatically
 
-Bastion SG ID
+Security group allowing SSH from 0.0.0.0/0
 
-Connectivity Fixes
+Elastic IP for public access
 
-Added NAT for outbound access from private subnets
+🔐 Used to access internal cluster resources like EKS via kubectl.
 
-Used Bastion to access internal cluster services
+-----------
 
-🖥️ get-nodes.sh Script
+3. EKS Module
+Private-only API endpoint (endpoint_public_access = false)
+
+Subnet IDs from private subnets
+
+Custom IAM roles for cluster and node group
+
+Cluster log types enabled
+
+-----------
+
+4. Node Group Module
+1 managed node group with 2 nodes in private subnets
+
+Custom node IAM role attached
+
+We have added an inbound rule to the EKS cluster SG to allow TCP port 443 from the Bastion SG.
+
+📌 Done via Terraform like this:
+
+resource "aws_security_group_rule" "allow_bastion_to_eks" {
+  type                     = "ingress"
+  from_port               = 443
+  to_port                 = 443
+  protocol                = "tcp"
+  security_group_id       = <eks-cluster-sg-id>
+  source_security_group_id = <bastion-sg-id>
+  description             = "Allow Bastion Host to access EKS API Server"
+}
+Now kubectl works from Bastion for a private EKS cluster.
+
+-----------
+
+🖥️ Script: get-nodes.sh
+Use this script from within the Bastion Host after setting up kubectl.
+
+``` 
 #!/bin/bash
+echo "Fetching EKS Node Information..."
+kubectl get nodes -o wide | awk 'NR==1 || /ip-/{print $1, $6}'
 
-echo "Fetching EKS nodes..."
+```
 
-kubectl get nodes -o wide | awk 'NR==1 { print "Node Name\tInternal IP" } NR>1 { print $1 "\t" $6 }'
-🔑 Authentication & Access Instructions
-SSH into Bastion:
+Sample Output:
+Node Name                  Internal IP
+ip-10-0-1-xx.ec2.internal  10.0.1.57
+ip-10-0-2-yy.ec2.internal  10.0.2.89
 
-chmod 400 eks-bastion-key.pem
-ssh -i eks-bastion-key.pem ubuntu@<BASTION_PUBLIC_IP>
-Install tools on Bastion:
+-----------
 
-sudo apt update && sudo apt install -y awscli curl unzip
-curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
-chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-Configure AWS:
+🔑 Authenticating kubectl on Bastion
+Install AWS CLI & kubectl on Bastion
 
+Configure AWS credentials:
 aws configure
-Fetch kubeconfig:
 
-aws eks update-kubeconfig --name verantos-eks-cluster --region us-east-1
-Run the script:
+Update kubeconfig:
+aws eks --region us-east-1 update-kubeconfig --name verantos-eks-cluster
 
-chmod +x get-nodes.sh
-./get-nodes.sh
-📄 IAM & Security Notes
-EKS IAM Role: Attached with AmazonEKSClusterPolicy
+-----------
 
-Node Group Role: Attached with AmazonEKSWorkerNodePolicy, AmazonEC2ContainerRegistryReadOnly, AmazonEKS_CNI_Policy
+📤 Output Values After First Apply
+After running terraform apply, these are returned:
 
-Bastion SG: Allowed inbound SSH (port 22), outbound 0.0.0.0/0
+Bastion instance ID and public IP
 
-EKS Cluster SG: Custom rule for allowing port 443 from Bastion SG
+EKS cluster endpoint
 
-📝 Final Notes
-No public exposure of the cluster
+Node group name
 
-All infrastructure is provisioned via custom Terraform modules
+VPC ID
 
-Full control and security maintained across all resources
+Subnet IDs
+
+-----------
+
+📌 Final Notes
+This project was built from scratch without any starter template.
+
+All modules were created manually (not re-used from Terraform Registry).
+
+Terraform output values were used as input variables for later stages where needed.
+
+GitHub repository was created from scratch and pushed after completion.
