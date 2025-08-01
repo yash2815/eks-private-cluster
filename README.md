@@ -60,9 +60,11 @@ Create an S3 bucket and DynamoDB table manually (or via Terraform).
 Configure the backend using backend.tf in main-infra/env/dev/.
 Initialize Terraform using:
 
+```
 cd state-mgmt/
 terraform init
 terraform apply
+```
 
 
 --------------------------------------------------------------------------------------------------------------------
@@ -125,6 +127,8 @@ We have added an inbound rule to the EKS cluster SG to allow TCP port 443 from t
 
 📌 Done via Terraform like this:
 
+```
+
 resource "aws_security_group_rule" "allow_bastion_to_eks" {
   type                     = "ingress"
   from_port               = 443
@@ -134,6 +138,8 @@ resource "aws_security_group_rule" "allow_bastion_to_eks" {
   source_security_group_id = <bastion-sg-id>
   description             = "Allow Bastion Host to access EKS API Server"
 }
+
+```
 Now kubectl works from Bastion for a private EKS cluster.
 
 --------------------------------------------------------------------------------------------------------------------
@@ -154,6 +160,8 @@ controllerManager
 scheduler
 
 🔧 Terraform Configuration:
+
+```
 This is configured in /modules/eks/main.tf as:
 
  enabled_cluster_log_types = var.enable_cluster_logs ? [
@@ -163,6 +171,8 @@ This is configured in /modules/eks/main.tf as:
   "controllerManager",
   "scheduler"
 ] : []
+
+```
 
 This helps track authentication issues, API calls, scheduler decisions, and other critical EKS events in CloudWatch.
 
@@ -180,6 +190,7 @@ Path: modules/iam/main.tf
 
 This IAM role is assumed by the EKS control plane. It grants Amazon EKS the necessary permissions to manage the Kubernetes control plane, including provisioning and interacting with AWS resources on our behalf (like ENIs, VPC resources, and CloudWatch logs).
 
+```
 resource "aws_iam_role" "eks_cluster_role" {
   name = "eks-cluster-role"
   assume_role_policy = jsonencode({
@@ -193,6 +204,8 @@ resource "aws_iam_role" "eks_cluster_role" {
     }]
   })
 }
+
+```
 Attached AWS-managed policy:
 
 AmazonEKSClusterPolicy
@@ -203,6 +216,7 @@ Path: modules/iam/main.tf
 
 This IAM role is assumed by EC2 instances that serve as EKS worker nodes. It allows nodes to pull container images, register with the cluster, and communicate with AWS services securely.
 
+```
 resource "aws_iam_role" "eks_node_role" {
   name = "eks-node-role"
   assume_role_policy = jsonencode({
@@ -216,6 +230,8 @@ resource "aws_iam_role" "eks_node_role" {
     }]
   })
 }
+
+```
 Attached AWS-managed policies:
 
 AmazonEKSWorkerNodePolicy — for joining the EKS cluster.
@@ -227,6 +243,7 @@ AmazonEC2ContainerRegistryReadOnly — for pulling images from ECR.
 🔹 3. Inline Policy for Logging (attached to eks-cluster-role)
 To enable control plane logging to CloudWatch, we attach a custom inline policy to the eks-cluster-role. This ensures logs like API server, scheduler, authenticator, and controller manager are pushed to CloudWatch for observability and debugging.
 
+```
 resource "aws_iam_role_policy" "eks_logging_policy" {
   name = "eks-logging"
   role = aws_iam_role.eks_cluster_role.id
@@ -244,6 +261,8 @@ resource "aws_iam_role_policy" "eks_logging_policy" {
     }]
   })
 }
+
+```
 This is required if you enable logging via the enabled_cluster_log_types attribute in your EKS configuration.
 
 These IAM roles and policies are critical to the functioning of a secure and production-ready private EKS setup — enabling role-based access, secure EC2 interaction, and observability without over-privileging any component.
@@ -274,10 +293,13 @@ ip-10-0-2-yy.ec2.internal  10.0.2.89
 Install AWS CLI & kubectl on Bastion
 
 Configure AWS credentials:
+```
 aws configure
-
+```
 Update kubeconfig:
+```
 aws eks --region us-east-1 update-kubeconfig --name verantos-eks-cluster
+```
 
 --------------------------------------------------------------------------------------------------------------------
 
@@ -298,7 +320,9 @@ Subnet IDs
 To check these values anytime after infra creation,
 come back to the path: eks-private-cluster/main-infra/env/dev
 Now execute following command:
+```
 terraform output
+```
 
 ==> will show the output of all the resources created.
 
