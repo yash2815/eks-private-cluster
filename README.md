@@ -67,9 +67,9 @@ terraform apply
 
 --------------------------------------------------------------------------------------------------------------------
 
-
-
 ⚙️ Infrastructure Provisioning
+
+
 📁 Location: main-infra/env/dev/
 
 We used self-written Terraform modules for each resource category.
@@ -136,9 +136,124 @@ resource "aws_security_group_rule" "allow_bastion_to_eks" {
 }
 Now kubectl works from Bastion for a private EKS cluster.
 
------------
+--------------------------------------------------------------------------------------------------------------------
+
+
+📊 Monitoring and Logging
+
+
+We have enabled CloudWatch logging for the Amazon EKS control plane to improve observability and debugging.
+
+✅ Enabled Log Types:
+The following logs are streamed to Amazon CloudWatch Logs:
+
+api
+audit
+authenticator
+controllerManager
+scheduler
+
+🔧 Terraform Configuration:
+This is configured in /modules/eks/main.tf as:
+
+ enabled_cluster_log_types = var.enable_cluster_logs ? [
+  "api",
+  "audit",
+  "authenticator",
+  "controllerManager",
+  "scheduler"
+] : []
+
+This helps track authentication issues, API calls, scheduler decisions, and other critical EKS events in CloudWatch.
+
+--------------------------------------------------------------------------------------------------------------------
+
+📁 IAM Configuration
+Path: modules/iam/main.tf
+
+To securely run and manage the Amazon EKS cluster and its worker nodes, we provisioned IAM roles and policies explicitly in the modules/iam/main.tf file.
+
+This separation of IAM concerns ensures least-privilege access, supports logging, and allows EKS to manage the underlying AWS resources (e.g., EC2, networking) on our behalf.
+
+🔹 1. eks-cluster-role
+Path: modules/iam/main.tf
+
+This IAM role is assumed by the EKS control plane. It grants Amazon EKS the necessary permissions to manage the Kubernetes control plane, including provisioning and interacting with AWS resources on our behalf (like ENIs, VPC resources, and CloudWatch logs).
+
+resource "aws_iam_role" "eks_cluster_role" {
+  name = "eks-cluster-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+        Service = "eks.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+Attached AWS-managed policy:
+
+AmazonEKSClusterPolicy
+Grants full access for managing EKS clusters and associated resources.
+
+🔹 2. eks-node-role
+Path: modules/iam/main.tf
+
+This IAM role is assumed by EC2 instances that serve as EKS worker nodes. It allows nodes to pull container images, register with the cluster, and communicate with AWS services securely.
+
+resource "aws_iam_role" "eks_node_role" {
+  name = "eks-node-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+Attached AWS-managed policies:
+
+AmazonEKSWorkerNodePolicy — for joining the EKS cluster.
+
+AmazonEKS_CNI_Policy — for managing network interfaces.
+
+AmazonEC2ContainerRegistryReadOnly — for pulling images from ECR.
+
+🔹 3. Inline Policy for Logging (attached to eks-cluster-role)
+To enable control plane logging to CloudWatch, we attach a custom inline policy to the eks-cluster-role. This ensures logs like API server, scheduler, authenticator, and controller manager are pushed to CloudWatch for observability and debugging.
+
+resource "aws_iam_role_policy" "eks_logging_policy" {
+  name = "eks-logging"
+  role = aws_iam_role.eks_cluster_role.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ],
+      Resource = "*"
+    }]
+  })
+}
+This is required if you enable logging via the enabled_cluster_log_types attribute in your EKS configuration.
+
+These IAM roles and policies are critical to the functioning of a secure and production-ready private EKS setup — enabling role-based access, secure EC2 interaction, and observability without over-privileging any component.
+
+--------------------------------------------------------------------------------------------------------------------
+
 
 🖥️ Script: get-nodes.sh
+Now comes the final part to check the nodes status from our bastion ec2 server.
+
 Use this script from within the Bastion Host after setting up kubectl.
 
 ``` 
@@ -164,9 +279,10 @@ aws configure
 Update kubeconfig:
 aws eks --region us-east-1 update-kubeconfig --name verantos-eks-cluster
 
------------
+--------------------------------------------------------------------------------------------------------------------
 
-📤 Output Values After First Apply
+
+📤 Output Values After First Apply (terraform apply):
 After running terraform apply, these are returned:
 
 Bastion instance ID and public IP
@@ -179,7 +295,14 @@ VPC ID
 
 Subnet IDs
 
------------
+To check these values anytime after infra creation,
+come back to the path: eks-private-cluster/main-infra/env/dev
+Now execute following command:
+terraform output
+
+==> will show the output of all the resources created.
+
+--------------------------------------------------------------------------------------------------------------------
 
 📌 Final Notes
 This project was built from scratch without any starter template.
