@@ -5,8 +5,6 @@ vpc_cidr             = "10.0.0.0/16"
 private_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
 azs                  = ["us-east-1a", "us-east-1b"]
 
-# Public subnet to host Bastion (manually created or imported)
-public_subnet_id = "subnet-0c4367a6e38233306"
 
 # Bastion configuration
 bastion_ami_id        = "ami-053b0d53c279acc90"
