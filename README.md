@@ -161,9 +161,8 @@ scheduler
 
 🔧 Terraform Configuration:
 
-```
 This is configured in /modules/eks/main.tf as:
-
+```
  enabled_cluster_log_types = var.enable_cluster_logs ? [
   "api",
   "audit",
