@@ -304,11 +304,48 @@ terraform output
 
 --------------------------------------------------------------------------------------------------------------------
 
-📌 Final Notes
-This project was built from scratch without any starter template.
 
-All modules were created manually (not re-used from Terraform Registry).
+🧾 Infrastructure Setup Summary
 
-Terraform output values were used as input variables for later stages where needed.
+This project provisions a private Amazon EKS cluster from scratch using Terraform, emphasizing secure and production-ready architecture. The infrastructure is modular and follows best practices across networking, compute, IAM, and observability layers.
 
-GitHub repository was created from scratch and pushed after completion.
+🔹 Key Components
+VPC
+A custom Virtual Private Cloud with:
+
+2 public subnets (for Bastion host, NAT Gateway)
+
+2 private subnets (for EKS cluster and nodes)
+
+Proper route tables and internet access via NAT for private workloads
+
+NAT Gateway
+Required to allow instances in private subnets (like EKS nodes) to access the internet for pulling container images, etc.
+
+Bastion Host
+A secure jump box deployed in a public subnet with a key pair and restricted SSH access, allowing controlled access into the private subnets (including the EKS cluster).
+
+EKS Cluster
+A highly available, private Kubernetes control plane without public endpoint exposure. Communication is only allowed through the Bastion host or IAM-authenticated users.
+
+EKS Node Group
+Managed EC2-based worker nodes deployed in private subnets and linked to the EKS cluster via node IAM role, supporting the Kubernetes workloads.
+
+IAM Roles & Policies
+Fine-grained roles for both EKS control plane and nodes, along with custom inline policies to allow logging to CloudWatch and secure cluster operations.
+
+CloudWatch Logging
+Logging is enabled by attaching a custom policy to the cluster IAM role, granting EKS permissions to stream logs to Amazon CloudWatch.
+
+📌 Workflow Summary
+Remote backend configured with S3 and DynamoDB for storing and locking Terraform state.
+
+Infrastructure provisioned via main-infra/env/dev using well-defined modules for vpc, eks, nodegroup, bastion, and iam.
+
+All variable values centralized inside terraform.tfvars to allow environment-specific overrides.
+
+Bastion's Security Group was added to EKS cluster's SG for seamless kubectl communication.
+
+NAT Gateway ensures node group creation doesn't fail due to lack of internet access.
+
+Auth configured to allow kubectl access via AWS CLI and aws-auth config map update.
